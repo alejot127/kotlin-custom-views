@@ -24,59 +24,95 @@ import com.alejot.kotlin.customviews.R
 class CircularDataDisplay : View
 {
     // Constants
-    private val DATA_LABEL_SIZE_RATIO = 0.45f
-    private val LABEL_YPOS_ADJUSTION = 1.1f
-    private val DEFAULT_TEXT_SIZE = 60
+    private val DATA_TO_LABEL_SIZE_RATIO = 0.4f
+    private val DATA_LABEL_SPACING_TO_LABEL_HEIGHT_RATIO = 0.2f
+    private val DEFAULT_TEXT_SIZE_SP = 100
+    private val CIRCUMSCRIBED_PADDING = 20
+    private val MAX_CHARACTERS_SUPPORTED = "XXXXX"
+
+    // View fields
+    private var viewWidth = 0
+    private var viewHeight = 0
 
     // Display fields
-    private var displayPaint: Paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val displayPaint: Paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private var displayRadius: Float = 0f
 
     // Data text fields
     private var data: CharSequence = ""
     private var dataLayout: StaticLayout? = null
-    private var dataPosition: Point = Point(0 , 0)
-    private var dataPaint: TextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG)
+    private val dataPosition: Point = Point(0 , 0)
+    private val dataPaint: TextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG)
 
     // Label text fields
     private var label: CharSequence = ""
     private var labelLayout: StaticLayout? = null
-    private var labelPosition: Point = Point(0 , 0)
-    private var labelPaint: TextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG)
+    private val labelPosition: Point = Point(0 , 0)
+    private val labelPaint: TextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG)
 
     // Constructors
     constructor(context: Context) : this(context, null, 0)
     constructor(context: Context, attrs: AttributeSet?) : this(context, attrs, 0)
     constructor(context: Context, attrs: AttributeSet?, defStyleRes: Int) : super(context, attrs, defStyleRes)
     {
+        // Get layout params
         val a: TypedArray = context.obtainStyledAttributes(attrs, R.styleable.CircularDataDisplay, 0, defStyleRes)
-
-        val dColor: Int = a.getColor(R.styleable.CircularDataDisplay_displayColor, Color.BLACK)
-        setDisplayColor(dColor)
-
+        val rawSize = a.getDimensionPixelSize(R.styleable.CircularDataDisplay_textSize, Dimension.SP.plus(DEFAULT_TEXT_SIZE_SP)).toFloat()
         val textColor = a.getColor(R.styleable.CircularDataDisplay_textColor, Color.WHITE)
-        setTextColors(textColor)
-
-        val rawSize: Int = a.getDimensionPixelSize(R.styleable.CircularDataDisplay_textSize, Dimension.SP.plus(DEFAULT_TEXT_SIZE))
-        setTextSizes(rawSize.toFloat())
-
-        var text: CharSequence? = a.getText(R.styleable.CircularDataDisplay_dataText)
-        setDataText(text)
-
-        text = a.getText(R.styleable.CircularDataDisplay_labelText)
-        setLabelText(text)
-
-        updateBounds()
+        val dataText: CharSequence = a.getText(R.styleable.CircularDataDisplay_dataText)
+        val labelText: CharSequence = a.getText(R.styleable.CircularDataDisplay_labelText)
+        val dColor: Int = a.getColor(R.styleable.CircularDataDisplay_displayColor, Color.BLACK)
         a.recycle()
+
+        // Initialize text paints
+        dataPaint.color = textColor
+        labelPaint.color = textColor
+        setTextSizes(rawSize)
+
+        // Initialize text
+        data = dataText
+        label = labelText
+
+        // Initialize display paint
+        displayPaint.color = dColor
+
+        // Initialize view boundaries.
+        setDisplayedData()
+        updateViewBounds()
     }
 
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        if (w != oldw || h != oldh) {
-            updateBounds()
+    fun setLabelText(text: CharSequence?)
+    {
+        if (text != null && !TextUtils.equals(label, text))
+        {
+            label = text
+            updateTextPosition()
+            invalidate()
         }
     }
 
-    override fun onDraw(canvas: Canvas?)
+    fun setDataText(text: CharSequence?)
     {
+        if (text != null && !TextUtils.equals(data, text))
+        {
+            data = text
+            setDisplayedData()
+            updateTextPosition()
+            invalidate()
+        }
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int)
+    {
+        // Only update if anything actually changed
+        if (w != oldw || h != oldh)
+        {
+            updateViewBounds()
+            invalidate()
+        }
+    }
+
+    override fun onDraw(canvas: Canvas?) {
         if (canvas != null)
         {
             // Draw display area
@@ -87,56 +123,61 @@ class CircularDataDisplay : View
         }
     }
 
-    fun setLabelText(text: CharSequence?)
+    private fun setTextSizes(size: Float)
     {
-        if (text != null && !TextUtils.equals(label, text))
-        {
-            label = text
-            updateBounds()
-            invalidate()
-        }
-    }
-
-    fun setDataText(text: CharSequence?)
-    {
-        if (text != null && !TextUtils.equals(data, text))
-        {
-            data = text
-            updateBounds()
-            invalidate()
-        }
-    }
-
-    fun setTextSizes(size: Float)
-    {
+        // The size of the label is proportional to the size of the data
         dataPaint.textSize = size
-        labelPaint.textSize = dataPaint.textSize * DATA_LABEL_SIZE_RATIO
+        labelPaint.textSize = dataPaint.textSize * DATA_TO_LABEL_SIZE_RATIO
     }
 
-    fun setTextColors(color: Int)
+    private fun updateViewBounds()
     {
-        dataPaint.color = color
-        labelPaint.color = color
+        // Update stored view dimensions
+        viewWidth = width
+        viewHeight = height
+
+        // Update text positioning
+        updateTextPosition()
+
+        updateDisplaySize()
     }
 
-    fun setDisplayColor(color: Int)
+    private fun setDisplayedData()
     {
-        displayPaint.color = color
+        // Clip the displayed data so that it
+        // doesn't bleed outside of the circle display
+        val dataBuilder = StringBuilder()
+        if (data.length < MAX_CHARACTERS_SUPPORTED.length)
+        {
+            dataBuilder.append(data)
+        }
+        else
+        {
+            dataBuilder.append(data.slice(1..3))
+            dataBuilder.append('+')
+        }
+
+        data = dataBuilder.toString()
     }
 
-    private fun updateBounds()
+    private fun updateDisplaySize()
     {
-        val w = width
-        val h = height
+        // Circumference of circular dependent on size of text + padding
+        val textWidth = dataPaint.measureText(MAX_CHARACTERS_SUPPORTED, 0, MAX_CHARACTERS_SUPPORTED.length)
+        val displayCirc = textWidth + (CIRCUMSCRIBED_PADDING * 2)
+        displayRadius = Dimension.PX.plus(displayCirc / 2)
+    }
 
+    private fun updateTextPosition()
+    {
         // Create the text layout for the data text
         val dWidth = dataPaint.measureText(data, 0, data.length).toInt()
         dataLayout = StaticLayout(data, dataPaint, dWidth, Layout.Alignment.ALIGN_CENTER, 1f, 0f, true)
 
         // Position data text in the center of the view
         val dHeight = dataLayout?.height ?: 0
-        val dXPos: Int = (w - dWidth) / 2
-        val dYPos: Int = (h - dHeight) / 2
+        val dXPos: Int = (viewWidth - dWidth) / 2
+        val dYPos: Int = (viewHeight - dHeight) / 2
         dataPosition.set(dXPos, dYPos)
 
         // Create the text layout for the label text
@@ -145,22 +186,21 @@ class CircularDataDisplay : View
 
         // Position the label text centered and just below the data text
         val lHeight = labelLayout?.height ?: 0
-        val lXPos: Int = (w - lWidth) / 2
-        val lYPos: Int = (h + lHeight) / 2
-        labelPosition.set(lXPos, (lYPos * LABEL_YPOS_ADJUSTION).toInt())
+        val lXPos: Int = (viewWidth - lWidth) / 2
+        val lYPos: Int = (viewHeight + lHeight) / 2 + (lHeight * DATA_LABEL_SPACING_TO_LABEL_HEIGHT_RATIO).toInt()
+        labelPosition.set(lXPos, lYPos)
     }
 
     private fun drawDisplayArea(canvas: Canvas)
     {
-        val centerX: Float = width.toFloat() / 2
-        val centerY: Float = height.toFloat() / 2
-        val radius: Float = height.toFloat() / 2
-        canvas.drawCircle(centerX, centerY, radius, displayPaint)
+        val centerX: Float = viewWidth / 2f
+        val centerY: Float = viewHeight / 2f
+        canvas.drawCircle(centerX, centerY, displayRadius, displayPaint)
     }
 
     private fun drawText(canvas: Canvas)
     {
-        // Translate and restore the canvas drawing position after drawing each text field
+        // Translate, draw, and restore the canvas for each text field
         canvas.save()
         canvas.translate(dataPosition.x.toFloat(), dataPosition.y.toFloat())
         dataLayout?.draw(canvas)
